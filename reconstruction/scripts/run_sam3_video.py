@@ -255,7 +255,7 @@ def main():
 
     # Build predictor
     print("Loading SAM3 model...")
-    predictor = build_sam3_video_predictor()
+    predictor = build_sam3_video_predictor(checkpoint_path=args.checkpoint)
 
     # Start session
     print(f"Starting session on: {args.video}")

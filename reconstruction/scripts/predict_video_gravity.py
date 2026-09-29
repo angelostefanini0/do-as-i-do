@@ -45,6 +45,7 @@ def predict_video_gravity(
     mad_threshold: float = 3.0,
     max_frames: int | None = None,
     device: str | None = None,
+    moving_camera: bool = False,
 ) -> dict:
     """Predict gravity for a static-camera video.
 
@@ -122,6 +123,11 @@ def predict_video_gravity(
     if not gravity_vecs:
         raise RuntimeError("No frames successfully processed.")
 
+    if moving_camera:
+        # Camera-frame gravity vectors from different orientations cannot be
+        # averaged without first rotating them into a common world frame.
+        return {"n_frames": len(gravity_vecs), "per_frame": per_frame}
+
     vecs = torch.stack(gravity_vecs)        # [N, 3]
     confs = torch.tensor(confidences)       # [N]
 
@@ -191,6 +197,8 @@ def main():
     )
     parser.add_argument("--device", default=None, help="Torch device (default: auto).")
     parser.add_argument("--output_path", default=None, help="Save results as JSON to this path.")
+    parser.add_argument("--moving-camera", action="store_true",
+                        help="Save per-camera gravity vectors without a static-camera average")
     args = parser.parse_args()
 
     result = predict_video_gravity(
@@ -199,7 +207,23 @@ def main():
         mad_threshold=args.mad_threshold,
         max_frames=args.max_frames,
         device=args.device,
+        moving_camera=args.moving_camera,
     )
+
+    if args.moving_camera:
+        output = {
+            "frame": "per_camera", "n_frames": result["n_frames"],
+            "note": "Per-frame GeoCalib gravity; no average across moving camera frames.",
+            "per_frame": [
+                {"path": f["path"], "vec3d": f["vec"].tolist(),
+                 "roll_deg": f["roll_deg"], "pitch_deg": f["pitch_deg"],
+                 "confidence": f["confidence"]} for f in result["per_frame"]
+            ],
+        }
+        if args.output_path is not None:
+            Path(args.output_path).write_text(json.dumps(output, indent=2))
+        print(f"Saved GeoCalib gravity in {result['n_frames']} individual camera frames.")
+        return
 
     print("\n=== Final Gravity Estimate ===")
     print(f"  Roll:   {result['roll_deg']:+.2f}°")
